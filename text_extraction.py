@@ -3,7 +3,6 @@ import aiohttp
 import bs4
 import spacy
 import re
-from urllib.parse import urlparse
 
 class ScrapTool:
     def __init__(self):

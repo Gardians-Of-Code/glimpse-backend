@@ -12,8 +12,4 @@ aiohttp
 
 bs4
 
-re
-
-urllib
-
 joblib
