@@ -20,3 +20,7 @@
    ```bash
    python bookmark.py
    ```
+7. Start the server by running the following command-
+   ```bash
+   python server.py
+   ```
