@@ -12,7 +12,11 @@
    ```bash
    pip install -r requirements.txt
    ```
-5. Run the following command to test the classifier-
+5. Run the following command to install the model-
+   ```bash
+   python -m spacy download en_core_web_sm
+   ```
+6. Run the following command to test the classifier-
    ```bash
    python bookmark.py
    ```
