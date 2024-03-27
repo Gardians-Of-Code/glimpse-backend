@@ -58,10 +58,14 @@ class ScrapTool:
             if not self.isIrrelevant(para):
                 para_text = para.get_text(separator=' ', strip=True).replace('\n', ' ')
                 if para_text and any(char.isalnum() for char in para_text):
-
                     para_return+=para_text+"\n"
         return para_return
         
+    def getTitle(self, soup):
+        title = soup.title
+        title_text = title.get_text(separator=' ', strip=True).replace('\n', ' ')
+        if title_text and any(char.isalnum() for char in title_text):
+            return title_text
 
 
 class TextExtraction:
