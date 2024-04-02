@@ -13,3 +13,9 @@ aiohttp
 bs4
 
 joblib
+
+flask[assync]
+
+transformers
+
+nltk
