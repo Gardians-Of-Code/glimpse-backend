@@ -49,7 +49,16 @@ class ScrapTool:
             if element.find_parents(tag):
                 return True
         return False
-
+    
+    def getHeadingText(self, soup):
+        heading_return=""
+        allHead = soup.find_all({'h1','h2','h3','h4','h5','h6'})
+        for head in allHead:
+            if not self.isIrrelevant(head):
+                heading_text = head.get_text(separator=' ', strip=True).replace('\n', ' ')
+                if heading_text and any(char.isalnum() for char in heading_text):
+                    heading_return+=heading_text+"\n"
+        return heading_return
 
     def getParagraphText(self, soup):
         para_return=""
@@ -106,5 +115,10 @@ class TextExtraction:
         extracted_text = self.scrapper.getParagraphText(soup)
         return extracted_text
     
+    def extract_text_v2(self,url):
+        res = requests.get(url, headers=self.headers).content
+        soup = BeautifulSoup(res, 'html.parser')
+        extracted_text = self.scrapper.getParagraphText(soup)+" "+self.scrapper.getHeadingText(soup)
+        return extracted_text
     
     

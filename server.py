@@ -24,5 +24,13 @@ def get_summary():
     return jsonify({"summary": summary})
 
 
+@app.route("/api/v1/estimate_reading_time", methods=["POST"])
+def get_estimated_reading_time():
+    data = request.get_json()
+    url = data["url"]
+    time = models.estimate_reading_time(url)
+    return jsonify({"reading_time": time})
+
+
 if __name__ == "__main__":
     app.run(debug=False, port=5000)

@@ -35,5 +35,9 @@ class Models:
         summary = self.text_summarization_tool.get_summary(chunks)
         return summary
     
-# m=Models()
-# print(asyncio.run(m.get_tags_for_website("https://news.mit.edu/topic/machine-learning")))
+    
+    def estimate_reading_time(self, url):
+        extracted_text = self.text_extraction_tool.extract_text_v2(url)
+        doc=nlp(extracted_text)
+        tokens = [t.text for t in doc if not t.is_punct and not t.is_space]
+        return max(1,len(tokens)//200)
