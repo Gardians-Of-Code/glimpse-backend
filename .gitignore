@@ -1,1 +1,4 @@
 website_classifier_model.pkl
+
+# environment variables
+.env
