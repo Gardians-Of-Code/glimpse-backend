@@ -8,13 +8,17 @@ import os
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
+import time
+import json
+from flask_cors import CORS
 
 app = Flask(__name__)
+CORS(app)  # This will enable CORS for all routes
 
 global models
 models = Models()
 
-
+# url_regex = re.compile(r"/^(https?|http?):\/\/(www\.)?[a-zA-Z0-9]+\.[a-zA-Z0-9]+(\/[a-zA-Z0-9]+)*$/")
 
 
 @app.route("/api/v1/get_tags", methods=["POST"])
@@ -26,7 +30,7 @@ async def get_tags():
 
 
 @app.route("/api/v1/summary", methods=["POST"])
-def get_summary():
+async def get_summary():
     data = request.get_json()
     url = data["url"]
     summary = models.summarize_website(url)
@@ -34,7 +38,7 @@ def get_summary():
 
 
 @app.route("/api/v1/estimate_reading_time", methods=["POST"])
-def get_estimated_reading_time():
+async def get_estimated_reading_time():
     data = request.get_json()
     url = data["url"]
     time = models.estimate_reading_time(url)
@@ -42,28 +46,37 @@ def get_estimated_reading_time():
 
 
 @app.route("/api/v1/urldata", methods=["POST"])
-def get_url_data():
+async def get_url_data():
     data = request.get_json()
     url = data["url"]
+    print(url)
     # if not url_regex.match(url):
     #     return jsonify({"error": "Invalid URL"}), 400
     
     response = requests.get(url)
     
-    # fetch the icon of the website
-    icon = requests.get(f"https://logo.clearbit.com/${url}")
-    if icon.status_code == 404:
-        icon = requests.get(f"https://www.google.com/s2/favicons?domain=${url}")
-    icon = icon.content
+    # # fetch the icon of the website
+    # icon = requests.get(f"https://logo.clearbit.com/${url}")
+    # if icon.status_code == 404:
+    #     icon = requests.get(f"https://www.google.com/s2/favicons?domain=${url}")
+    # icon = icon.content
     
     # Parse the HTML content
-    soup = BeautifulSoup(response.content, 'html.parser')
+    # soup = BeautifulSoup(response.content, 'html.parser')
+    # description = soup.find("meta", {"name": "description"})
+    # if not description:
+    #     description = "No description found"
+    # else:
+    #     description = description.get("content", "No description found")
+    
+    # get ml tags
+    name, tags = await models.get_tags_for_website(response.url)
     
     data = {
-        "title": soup.title.string,
-        "description": soup.find("meta", {"name": "description"})["content"],
-        "image": base64.b64encode(icon).decode('utf-8'),
-        "url": url
+        # "title": soup.title.string,
+        "title": name,
+        "url": response.url,
+        "mlTags": tags,
     }
     
     return jsonify(data), response.status_code
@@ -71,7 +84,7 @@ def get_url_data():
 
 
 @app.route("/api/v1/proxy", methods=["POST"])
-def get_proxy():
+async def get_proxy():
     data = request.get_json()
     url = data["url"]
     show_language = data["showLanguage"]
@@ -105,16 +118,51 @@ def get_proxy():
     except Exception as e:
         return jsonify({"error": "Error fetching url"}), 500
 
+# Load the cache from a file
+try:
+    with open('cache.json', 'r') as f:
+        cache = json.load(f)
+except FileNotFoundError:
+    cache = {}
+
 @app.route("/api/v1/weather", methods=["POST"])
 def get_weather():
-    data = request.get_json()
-    lat = float(data["lat"])
-    lon = float(data["lon"])    
-    units = data["units"]
-    response = requests.get(f"https://api.openweathermap.org/data/2.5/onecall?lat={lat}&lon={lon}&exclude=minutely&appid={os.environ['WEATHER_API_KEY']}&units={units}")
-    return jsonify(response.json()), response.status_code
+    lat = request.args.get("lat")
+    lon = request.args.get("lon")
+    units = request.args.get("units")
 
+    # Convert lat and lon to float and round to 1 decimal place
+    lat = round(float(lat), 1)
+    lon = round(float(lon), 1)
+
+    # Create a cache key from the lat, lon, and units parameters
+    cache_key = f"{lat},{lon},{units}"
+
+    # If the data is in the cache and it's less than 1 hour old, send it
+    if cache_key in cache and time.time() - cache[cache_key]['timestamp'] < 60 * 60:
+        return jsonify(cache[cache_key]['data'])
+
+    # If the data is not in the cache or it's more than 1 hour old, fetch it and store it in the cache
+    try:
+        response = requests.get(
+            f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&units={units}&appid={os.environ['WEATHER_API_KEY']}"
+        )
+        response.raise_for_status()
+    except requests.RequestException as e:
+        print(f"Error fetching weather: {e}")
+        return jsonify({"error": "Error fetching weather"}), 500
+
+    cache[cache_key] = {
+        "data": response.json(),
+        "timestamp": time.time(),
+    }
+
+    # Save the cache to a file
+    with open('cache.json', 'w') as f:
+        json.dump(cache, f, indent=2)
+
+    return jsonify(response.json())
 
 if __name__ == "__main__":
     load_dotenv()
-    app.run(debug=False, port=3000)
+    app.run(debug=False, port=5000)
