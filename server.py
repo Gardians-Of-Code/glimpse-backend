@@ -1,6 +1,6 @@
 import base64
 import re
-from flask import Flask, request, jsonify, Response, current_app
+from flask import Flask, request, jsonify, Response, current_app, send_file, after_this_request
 from ml_models import *
 from tokenizer import *
 from dotenv import load_dotenv
@@ -11,14 +11,60 @@ from urllib.parse import urljoin
 import time
 import json
 from flask_cors import CORS
+import tempfile
+
 
 app = Flask(__name__)
-CORS(app)  # This will enable CORS for all routes
+CORS(app, resources={r"/*": {"origins": "*"}})  # This will enable CORS for all routes and all origins
 
 global models
 models = Models()
 
-# url_regex = re.compile(r"/^(https?|http?):\/\/(www\.)?[a-zA-Z0-9]+\.[a-zA-Z0-9]+(\/[a-zA-Z0-9]+)*$/")
+# url_regex = re.compile(r"^(https?|http?):\/\/(www\.)?[a-zA-Z0-9]+\.[a-zA-Z0-9]+(\/[a-zA-Z0-9]+)*")
+# url_regex = re.compile(r"^(https?|http?):\/\/[a-zA-Z0-9-._~:/?#[\]@!$&'()*+,;=%]+")
+url_regex = re.compile(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+')
+
+
+@app.route("/api/v1/summary", methods=["POST"])
+async def get_summary():
+    data = request.get_json()
+    url = data["url"]
+    if not url_regex.match(url):
+        return jsonify({"error": "Invalid URL"}), 400
+    summary = models.summarize_website(url)
+    
+    response = requests.get(url)
+    soup = BeautifulSoup(response.text, 'html.parser')
+    title = soup.title.string if soup.title else "Summary"
+     # Remove or replace unsupported characters
+    title = title.encode('latin-1', errors='ignore').decode('latin-1')
+    
+    summary = f"{title}\n\n{summary}"
+    
+    # create a temporary file to store the summary
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as f:
+        f.write(summary.encode())
+        file_path = f.name
+
+    @after_this_request
+    def after_request(response):
+        try:
+            response.headers.add('Access-Control-Expose-Headers', 'Content-Disposition')
+            # os.remove(file_path)
+        except Exception as error:
+            app.logger.error("Error removing or closing downloaded file handle: %s", error)
+        return response
+
+    try:
+        response = send_file(file_path, as_attachment=True)
+        response.headers["Content-Disposition"] = f"attachment; filename={title}.txt"
+        return response
+    finally:
+        try:
+            os.remove(file_path)
+        except Exception as error:
+            app.logger.error("Error removing or closing downloaded file handle: %s", error)
+        
 
 
 @app.route("/api/v1/get_tags", methods=["POST"])
@@ -29,12 +75,6 @@ async def get_tags():
     return jsonify({"name": name, "tags": tags})
 
 
-@app.route("/api/v1/summary", methods=["POST"])
-async def get_summary():
-    data = request.get_json()
-    url = data["url"]
-    summary = models.summarize_website(url)
-    return jsonify({"summary": summary})
 
 
 @app.route("/api/v1/estimate_reading_time", methods=["POST"])
@@ -55,25 +95,18 @@ async def get_url_data():
     
     response = requests.get(url)
     
-    # # fetch the icon of the website
-    # icon = requests.get(f"https://logo.clearbit.com/${url}")
-    # if icon.status_code == 404:
-    #     icon = requests.get(f"https://www.google.com/s2/favicons?domain=${url}")
-    # icon = icon.content
-    
-    # Parse the HTML content
-    # soup = BeautifulSoup(response.content, 'html.parser')
-    # description = soup.find("meta", {"name": "description"})
-    # if not description:
-    #     description = "No description found"
-    # else:
-    #     description = description.get("content", "No description found")
+    if response.status_code != 200:
+        return jsonify({"error": "Error fetching url"}), response.status_code
+    elif response.headers.get("content-type") and "text/html" not in response.headers["content-type"]:
+        return jsonify({"error": "URL is not a website"}), 400
     
     # get ml tags
-    name, tags = await models.get_tags_for_website(response.url)
+    try:
+        name, tags = await models.get_tags_for_website(response.url)
+    except Exception as e:
+        return jsonify({"error": "Error fetching url"}), 500
     
     data = {
-        # "title": soup.title.string,
         "title": name,
         "url": response.url,
         "mlTags": tags,
@@ -107,9 +140,11 @@ async def get_proxy():
         # TODO: Implement translation if language does not include show_language
 
         # Calculate the estimated reading time
-        text = soup.body.get_text()
-        word_count = len(text.split())
-        reading_time = round(word_count / 200)  # 200 is the average reading speed in words per minute
+        # text = soup.body.get_text()
+        # word_count = len(text.split())
+        # reading_time = round(word_count / 200)  # 200 is the average reading speed in words per minute
+        
+        reading_time = models.estimate_reading_time(url)
 
         response = Response(soup.prettify())
         response.headers["x-reading-time"] = str(reading_time)
@@ -162,6 +197,10 @@ def get_weather():
         json.dump(cache, f, indent=2)
 
     return jsonify(response.json())
+
+@app.route("/*", methods=["OPTIONS"])
+def catch_all():
+    return jsonify({"error": "Invalid URL"}), 400
 
 if __name__ == "__main__":
     load_dotenv()
