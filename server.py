@@ -12,7 +12,7 @@ import time
 import json
 from flask_cors import CORS
 import tempfile
-
+import threading
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})  # This will enable CORS for all routes and all origins
@@ -54,17 +54,15 @@ async def get_summary():
         except Exception as error:
             app.logger.error("Error removing or closing downloaded file handle: %s", error)
         return response
-
-    try:
-        response = send_file(file_path, as_attachment=True)
-        response.headers["Content-Disposition"] = f"attachment; filename={title}.txt"
-        return response
-    finally:
-        try:
-            os.remove(file_path)
-        except Exception as error:
-            app.logger.error("Error removing or closing downloaded file handle: %s", error)
         
+    response = send_file(file_path, as_attachment=True)
+    response.headers["Content-Disposition"] = f"attachment; filename={title}.txt"
+    
+    # Schedule os.remove to be called after 2 minutes
+    threading.Timer(120, os.remove, args=[file_path]).start()
+    
+    return response
+    
 
 
 @app.route("/api/v1/get_tags", methods=["POST"])
