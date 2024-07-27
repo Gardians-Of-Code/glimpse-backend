@@ -14,7 +14,7 @@ bs4
 
 joblib
 
-flask[assync]
+flask[async]
 
 transformers
 
